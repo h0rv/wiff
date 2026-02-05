@@ -2,6 +2,8 @@
 
 A terminal diff viewer with syntax highlighting, side-by-side mode, live updates, and hunk navigation.
 
+![wiff screenshot](assets/screenshot.png)
+
 ## Install
 
 ```
