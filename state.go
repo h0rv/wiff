@@ -19,6 +19,8 @@ type State struct {
 	Height       int
 	Width        int
 	PendingKey   rune
+	PendingLabel string // accumulated label chars for multi-char yank
+	PendingTime  time.Time
 	Screen       tcell.Screen
 	Lines        []DisplayLine
 	PipeMode     bool
@@ -909,6 +911,30 @@ func (s *State) HunkByLabel(label string) *Hunk {
 		}
 	}
 	return nil
+}
+
+// hasLabelPrefix returns true if any hunk has a label starting with prefix
+// that is longer than prefix itself.
+func (s *State) hasLabelPrefix(prefix string) bool {
+	for i := range s.Hunks {
+		l := s.Hunks[i].Label
+		if len(l) > len(prefix) && l[:len(prefix)] == prefix {
+			return true
+		}
+	}
+	return false
+}
+
+// PendingDisplay returns the current pending key sequence for the status bar.
+// Returns "" when nothing is pending.
+func (s *State) PendingDisplay() string {
+	if s.PendingKey == 0 {
+		return ""
+	}
+	if s.PendingLabel != "" {
+		return string(s.PendingKey) + " " + s.PendingLabel
+	}
+	return string(s.PendingKey)
 }
 
 // CurrentFile returns the file path at the current scroll position by walking

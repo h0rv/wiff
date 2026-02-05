@@ -13,6 +13,13 @@ var (
 	lastClickY    int
 )
 
+// labelTimeout is the duration to wait before auto-resolving an ambiguous
+// single-char label that is also a prefix of longer labels.
+const labelTimeout = 500 * time.Millisecond
+
+// labelTimer fires to auto-resolve an ambiguous pending label.
+var labelTimer *time.Timer
+
 // HandleKey processes a key event, returns true if should quit
 func HandleKey(s *State, ev *tcell.EventKey) bool {
 	// Dismiss help overlay on any key
@@ -300,13 +307,18 @@ func handleTreeSelect(s *State) {
 
 func handlePending(s *State, ev *tcell.EventKey) bool {
 	pending := s.PendingKey
-	s.PendingKey = 0
 
 	if ev.Key() == tcell.KeyEscape {
+		s.PendingKey = 0
+		s.PendingLabel = ""
+		cancelLabelTimer()
 		return false // cancel
 	}
 
 	if ev.Key() != tcell.KeyRune {
+		s.PendingKey = 0
+		s.PendingLabel = ""
+		cancelLabelTimer()
 		return false
 	}
 
@@ -314,6 +326,7 @@ func handlePending(s *State, ev *tcell.EventKey) bool {
 
 	switch pending {
 	case ']':
+		s.PendingKey = 0
 		switch r {
 		case 'c':
 			s.JumpToNextHunk()
@@ -325,6 +338,7 @@ func handlePending(s *State, ev *tcell.EventKey) bool {
 			}
 		}
 	case '[':
+		s.PendingKey = 0
 		switch r {
 		case 'c':
 			s.JumpToPrevHunk()
@@ -336,7 +350,36 @@ func handlePending(s *State, ev *tcell.EventKey) bool {
 			}
 		}
 	case 'y', 'Y', 'p':
-		handleYank(s, pending, r)
+		candidate := s.PendingLabel + string(r)
+		// Exact match with no longer labels — yank immediately
+		if h := s.HunkByLabel(candidate); h != nil && !s.hasLabelPrefix(candidate) {
+			s.PendingKey = 0
+			s.PendingLabel = ""
+			cancelLabelTimer()
+			handleYankHunk(s, pending, h)
+			return false
+		}
+		// Exact match AND prefix of longer labels — accumulate, start timeout
+		// so the user can still yank the single-char label by waiting
+		if s.hasLabelPrefix(candidate) || s.HunkByLabel(candidate) != nil {
+			s.PendingLabel = candidate
+			s.PendingTime = time.Now()
+			startLabelTimer(s)
+			return false
+		}
+		// No match and not a prefix — if we had accumulated chars, try them alone
+		if s.PendingLabel != "" {
+			if h := s.HunkByLabel(s.PendingLabel); h != nil {
+				s.PendingKey = 0
+				s.PendingLabel = ""
+				cancelLabelTimer()
+				handleYankHunk(s, pending, h)
+				return false
+			}
+		}
+		s.PendingKey = 0
+		s.PendingLabel = ""
+		cancelLabelTimer()
 	}
 
 	return false
@@ -445,12 +488,45 @@ func copyClickedChunk(s *State, x, y int) bool {
 	return true
 }
 
-func handleYank(s *State, cmd, label rune) {
-	hunk := s.HunkByLabel(string(label))
-	if hunk == nil {
+// EventLabelTimeout is posted by the label timer to auto-resolve ambiguous labels.
+type EventLabelTimeout struct {
+	t time.Time
+}
+
+func (e *EventLabelTimeout) When() time.Time { return e.t }
+
+// ResolvePendingLabel auto-resolves an ambiguous pending label on timeout.
+func ResolvePendingLabel(s *State) {
+	if s.PendingKey == 0 || s.PendingLabel == "" {
 		return
 	}
+	cmd := s.PendingKey
+	if h := s.HunkByLabel(s.PendingLabel); h != nil {
+		handleYankHunk(s, cmd, h)
+	}
+	s.PendingKey = 0
+	s.PendingLabel = ""
+}
 
+// cancelLabelTimer stops any pending label timeout.
+func cancelLabelTimer() {
+	if labelTimer != nil {
+		labelTimer.Stop()
+		labelTimer = nil
+	}
+}
+
+// startLabelTimer starts a timer that posts EventLabelTimeout after labelTimeout.
+func startLabelTimer(s *State) {
+	cancelLabelTimer()
+	labelTimer = time.AfterFunc(labelTimeout, func() {
+		if s.Screen != nil {
+			_ = s.Screen.PostEvent(&EventLabelTimeout{t: time.Now()})
+		}
+	})
+}
+
+func handleYankHunk(s *State, cmd rune, hunk *Hunk) {
 	var text string
 	switch cmd {
 	case 'y':
@@ -472,7 +548,7 @@ func handleYank(s *State, cmd, label rune) {
 				s.FlashMsg = fmt.Sprintf("Yanked patch from hunk %s", hunk.Label)
 			}
 		} else {
-			s.FlashMsg = "Yank failed: could not write to terminal"
+			s.FlashMsg = fmt.Sprintf("Yank failed for hunk %s: could not write to terminal", hunk.Label)
 		}
 		s.FlashExpiry = time.Now().Add(2 * time.Second)
 	}

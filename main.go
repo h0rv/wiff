@@ -98,6 +98,9 @@ func main() {
 			state.ClampScroll()
 			screen.Sync()
 			Render(state)
+		case *EventLabelTimeout:
+			ResolvePendingLabel(state)
+			Render(state)
 		case *EventReload:
 			if state.WatchEnabled {
 				reloadDiff(state)

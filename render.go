@@ -635,8 +635,8 @@ func drawStatusBar(s *State) {
 		}
 	}
 
-	if s.PendingKey != 0 {
-		status += fmt.Sprintf(" [%c]", s.PendingKey)
+	if pd := s.PendingDisplay(); pd != "" {
+		status += fmt.Sprintf(" [%s…]", pd)
 	}
 
 	// Right-aligned help
