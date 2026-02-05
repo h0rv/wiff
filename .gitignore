@@ -1,0 +1,21 @@
+# Binary
+wiff
+wiff.exe
+
+# Go
+*.test
+*.out
+
+# GoReleaser
+dist/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
