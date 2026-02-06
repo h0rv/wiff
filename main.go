@@ -220,8 +220,10 @@ Keyboard Shortcuts:
   Tab         Cycle to next file      W   Toggle watch mode
   Shift+Tab   Cycle to prev file      f   Full file view
   y+label     Yank added lines        o   Open in $EDITOR
-  Y+label     Yank removed lines      ?   Help overlay
-  p+label     Yank patch              q   Quit
+  Y+label     Yank removed lines      F   Follow mode (watch)
+  p+label     Yank patch              ?   Help overlay
+  c+label     Copy result (new code)  q   Quit
+  A+label     Stage/unstage hunk
 `)
 }
 
@@ -301,12 +303,24 @@ func watchAndUpdate(s *State) {
 	}
 }
 
+// hunkFingerprint returns a string that identifies a hunk by file and position.
+func hunkFingerprint(h *Hunk) string {
+	return fmt.Sprintf("%s:%d:%d", h.File, h.OldStart, h.NewStart)
+}
+
 // reloadDiff re-runs git diff and rebuilds display lines while preserving
 // the user's scroll context (current file + approximate position).
 func reloadDiff(s *State) {
 	// Remember where the user is
 	prevFile := s.CurrentFile()
 	prevScroll := s.Scroll
+
+	// Snapshot old hunks for follow mode comparison
+	oldFingerprints := make(map[string]bool, len(s.Hunks))
+	for i := range s.Hunks {
+		oldFingerprints[hunkFingerprint(&s.Hunks[i])] = true
+	}
+	oldHunkCount := len(s.Hunks)
 
 	raw, err := runGitDiff(s.Refs, s.ContextLines, s.Staged)
 	if err != nil {
@@ -319,6 +333,30 @@ func reloadDiff(s *State) {
 	s.Hunks = hunks
 	buildTree(s)
 	s.BuildLines()
+
+	// Follow mode: find first new hunk and scroll to it
+	if s.FollowMode && len(s.Hunks) > 0 {
+		newCount := len(s.Hunks) - oldHunkCount
+		firstNewIdx := -1
+		for i := range s.Hunks {
+			if !oldFingerprints[hunkFingerprint(&s.Hunks[i])] {
+				firstNewIdx = i
+				break
+			}
+		}
+		if firstNewIdx >= 0 && s.Hunks[firstNewIdx].StartLine >= 0 {
+			s.Scroll = s.Hunks[firstNewIdx].StartLine
+			s.ClampScroll()
+			file := s.Hunks[firstNewIdx].File
+			if newCount > 0 {
+				s.FlashMsg = fmt.Sprintf("%d new hunks — %s", newCount, file)
+			} else {
+				s.FlashMsg = fmt.Sprintf("Changes in %s", file)
+			}
+			s.FlashExpiry = time.Now().Add(2 * time.Second)
+			return
+		}
+	}
 
 	// Try to restore scroll to the same file
 	if prevFile != "" {

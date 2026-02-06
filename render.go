@@ -113,10 +113,21 @@ func drawFileHeader(s *State, screen tcell.Screen, x, y int, text string, rightE
 func drawGutter(s *State, screen tcell.Screen, x, y int, line DisplayLine, maxLabelWidth int) int {
 	col := x
 	labelLen := len([]rune(line.Label))
+	staged := line.HunkIdx >= 0 && line.HunkIdx < len(s.Hunks) && s.Hunks[line.HunkIdx].Staged
 	if line.Label != "" {
+		labelStyle := s.Theme.Label
+		if staged {
+			labelStyle = s.Theme.DiffAdded.Bold(true)
+		}
 		for _, r := range line.Label {
-			screen.SetContent(col, y, r, nil, s.Theme.Label)
+			screen.SetContent(col, y, r, nil, labelStyle)
 			col++
+		}
+		// Show checkmark after label for staged hunks
+		if staged && labelLen < maxLabelWidth {
+			screen.SetContent(col, y, '✓', nil, s.Theme.DiffAdded)
+			col++
+			labelLen++
 		}
 		// Pad if label is shorter than the widest label
 		for i := labelLen; i < maxLabelWidth; i++ {
@@ -615,6 +626,11 @@ func drawStatusBar(s *State) {
 			s.RefDisplay(), s.UniqueFiles(), len(s.Hunks))
 	}
 
+	if len(s.Hunks) > 0 {
+		added, removed := s.DiffStats()
+		status += fmt.Sprintf(" \u2022 +%d -%d", added, removed)
+	}
+
 	if s.FilterFile != "" && !s.FullFile {
 		status += fmt.Sprintf(" • viewing: %s", s.FilterFile)
 	}
@@ -625,6 +641,10 @@ func drawStatusBar(s *State) {
 
 	if !s.PipeMode && !s.WatchEnabled {
 		status += " [watch off]"
+	}
+
+	if s.FollowMode {
+		status += " [FOLLOW]"
 	}
 
 	if len(s.SearchMatches) > 0 && s.SearchQuery != "" {
@@ -669,7 +689,7 @@ func drawStatusBar(s *State) {
 
 func drawHelpOverlay(s *State) {
 	const boxW = 60
-	const boxH = 27
+	const boxH = 29
 
 	screen := s.Screen
 	styleBorder := s.Theme.Dim
@@ -767,18 +787,20 @@ func drawHelpOverlay(s *State) {
 		"S-Tab   prev file             b   diff background",
 		"                              f   full file view",
 		"Hunks & Files                 W   watch mode",
-		"]c/[c   next/prev hunk",
-		"]f/[f   next/prev file        Search",
-		"+/-     more/less context     /   start search",
-		"mouse   scroll + tree click   n   next match",
-		"dbl-clk copy chunk            N   prev match",
-		"right-clk copy chunk          Esc clear search",
-		"Yank (copies to clipboard)",
-		"y+label yank added lines      File Tree",
-		"Y+label yank removed lines    Tab focus tree",
-		"p+label yank as patch         Enter select file",
-		"o       open in $EDITOR       a   show all files",
-		"?       help  q/Esc   quit",
+		"]c/[c   next/prev hunk        F   follow mode",
+		"]f/[f   next/prev file",
+		"+/-     more/less context     Search",
+		"mouse   scroll + tree click   /   start search",
+		"dbl-clk copy chunk            n   next match",
+		"right-clk copy chunk          N   prev match",
+		"                              Esc clear search",
+		"Yank (copies to clipboard)    Staging",
+		"y+label yank added lines      A+label stage/unstage",
+		"Y+label yank removed lines",
+		"p+label yank as patch         File Tree",
+		"c+label copy result (new)     Tab focus tree",
+		"o       open in $EDITOR       Enter select file",
+		"?       help  q/Esc   quit    a   show all files",
 	}
 
 	startRow := 3

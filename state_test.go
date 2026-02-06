@@ -241,6 +241,45 @@ func TestReconstructOldFileAddOnly(t *testing.T) {
 	}
 }
 
+func TestDiffStats(t *testing.T) {
+	s := &State{
+		Hunks: []Hunk{
+			{
+				File: "a.go",
+				Lines: []Line{
+					{Op: '+', Content: "added1"},
+					{Op: '+', Content: "added2"},
+					{Op: '-', Content: "removed1"},
+					{Op: ' ', Content: "context"},
+				},
+			},
+			{
+				File: "b.go",
+				Lines: []Line{
+					{Op: '+', Content: "added3"},
+					{Op: '-', Content: "removed2"},
+					{Op: '-', Content: "removed3"},
+				},
+			},
+		},
+	}
+	added, removed := s.DiffStats()
+	if added != 3 {
+		t.Errorf("DiffStats() added = %d, want 3", added)
+	}
+	if removed != 3 {
+		t.Errorf("DiffStats() removed = %d, want 3", removed)
+	}
+}
+
+func TestDiffStatsEmpty(t *testing.T) {
+	s := &State{}
+	added, removed := s.DiffStats()
+	if added != 0 || removed != 0 {
+		t.Errorf("DiffStats() = (+%d, -%d), want (+0, -0)", added, removed)
+	}
+}
+
 func TestWatchEnabledState(t *testing.T) {
 	s := &State{WatchEnabled: true}
 	if !s.WatchEnabled {

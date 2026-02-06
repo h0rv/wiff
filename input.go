@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
@@ -188,7 +190,17 @@ func handleRune(s *State, r rune) bool {
 		s.ClampScroll()
 	case '?':
 		s.ShowHelp = true
-	case ']', '[', 'y', 'Y', 'p':
+	case 'F':
+		if !s.PipeMode {
+			s.FollowMode = !s.FollowMode
+			if s.FollowMode {
+				s.FlashMsg = "Follow mode enabled"
+			} else {
+				s.FlashMsg = "Follow mode disabled"
+			}
+			s.FlashExpiry = time.Now().Add(2 * time.Second)
+		}
+	case ']', '[', 'y', 'Y', 'p', 'c', 'A':
 		s.PendingKey = r
 	}
 	return false
@@ -349,7 +361,7 @@ func handlePending(s *State, ev *tcell.EventKey) bool {
 				s.JumpToPrevFile()
 			}
 		}
-	case 'y', 'Y', 'p':
+	case 'y', 'Y', 'p', 'c':
 		candidate := s.PendingLabel + string(r)
 		// Exact match with no longer labels — yank immediately
 		if h := s.HunkByLabel(candidate); h != nil && !s.hasLabelPrefix(candidate) {
@@ -374,6 +386,33 @@ func handlePending(s *State, ev *tcell.EventKey) bool {
 				s.PendingLabel = ""
 				cancelLabelTimer()
 				handleYankHunk(s, pending, h)
+				return false
+			}
+		}
+		s.PendingKey = 0
+		s.PendingLabel = ""
+		cancelLabelTimer()
+	case 'A':
+		candidate := s.PendingLabel + string(r)
+		if h := s.HunkByLabel(candidate); h != nil && !s.hasLabelPrefix(candidate) {
+			s.PendingKey = 0
+			s.PendingLabel = ""
+			cancelLabelTimer()
+			handleStageHunk(s, h)
+			return false
+		}
+		if s.hasLabelPrefix(candidate) || s.HunkByLabel(candidate) != nil {
+			s.PendingLabel = candidate
+			s.PendingTime = time.Now()
+			startLabelTimer(s)
+			return false
+		}
+		if s.PendingLabel != "" {
+			if h := s.HunkByLabel(s.PendingLabel); h != nil {
+				s.PendingKey = 0
+				s.PendingLabel = ""
+				cancelLabelTimer()
+				handleStageHunk(s, h)
 				return false
 			}
 		}
@@ -502,7 +541,11 @@ func ResolvePendingLabel(s *State) {
 	}
 	cmd := s.PendingKey
 	if h := s.HunkByLabel(s.PendingLabel); h != nil {
-		handleYankHunk(s, cmd, h)
+		if cmd == 'A' {
+			handleStageHunk(s, h)
+		} else {
+			handleYankHunk(s, cmd, h)
+		}
 	}
 	s.PendingKey = 0
 	s.PendingLabel = ""
@@ -535,6 +578,8 @@ func handleYankHunk(s *State, cmd rune, hunk *Hunk) {
 		text = hunk.RemovedLines()
 	case 'p':
 		text = hunk.AsPatch()
+	case 'c':
+		text = hunk.ResultLines()
 	}
 
 	if text != "" {
@@ -546,10 +591,38 @@ func handleYankHunk(s *State, cmd rune, hunk *Hunk) {
 				s.FlashMsg = fmt.Sprintf("Yanked removed lines from hunk %s", hunk.Label)
 			case 'p':
 				s.FlashMsg = fmt.Sprintf("Yanked patch from hunk %s", hunk.Label)
+			case 'c':
+				s.FlashMsg = fmt.Sprintf("Copied result from hunk %s", hunk.Label)
 			}
 		} else {
 			s.FlashMsg = fmt.Sprintf("Yank failed for hunk %s: could not write to terminal", hunk.Label)
 		}
 		s.FlashExpiry = time.Now().Add(2 * time.Second)
 	}
+}
+
+func handleStageHunk(s *State, hunk *Hunk) {
+	patch := hunk.AsFullPatch()
+	args := []string{"apply", "--cached"}
+	if hunk.Staged {
+		args = append(args, "-R") // reverse to unstage
+	}
+	cmd := exec.Command("git", args...)
+	cmd.Stdin = strings.NewReader(patch)
+	if err := cmd.Run(); err != nil {
+		action := "Stage"
+		if hunk.Staged {
+			action = "Unstage"
+		}
+		s.FlashMsg = fmt.Sprintf("%s failed for hunk %s: %v", action, hunk.Label, err)
+		s.FlashExpiry = time.Now().Add(2 * time.Second)
+		return
+	}
+	hunk.Staged = !hunk.Staged
+	if hunk.Staged {
+		s.FlashMsg = fmt.Sprintf("Staged hunk %s", hunk.Label)
+	} else {
+		s.FlashMsg = fmt.Sprintf("Unstaged hunk %s", hunk.Label)
+	}
+	s.FlashExpiry = time.Now().Add(2 * time.Second)
 }

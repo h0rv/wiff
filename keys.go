@@ -28,10 +28,17 @@ var keyBindings = []KeyBinding{
 	// Full file view
 	{Key: 'f', Name: "toggle full file view"},
 
-	// Yank / patch (pending key prefixes)
+	// Yank / patch / copy (pending key prefixes)
 	{Key: 'y', Name: "yank added"},
 	{Key: 'Y', Name: "yank removed"},
 	{Key: 'p', Name: "yank patch"},
+	{Key: 'c', Name: "copy result"},
+
+	// Staging
+	{Key: 'A', Name: "stage/unstage hunk"},
+
+	// Follow mode
+	{Key: 'F', Name: "follow mode"},
 
 	// Search
 	{Key: '/', Name: "search"},

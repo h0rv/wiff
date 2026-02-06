@@ -557,6 +557,80 @@ func TestBlankDeletedLine(t *testing.T) {
 	}
 }
 
+// TestResultLinesMixed tests ResultLines on a hunk with adds, removes, and context.
+func TestResultLinesMixed(t *testing.T) {
+	hunks := helperParseFakeDiff(t)
+	h := hunks[0] // mixed hunk: context, removes, adds, context
+
+	result := h.ResultLines()
+
+	// Result should contain context lines and added lines, but NOT removed lines
+	if !strings.Contains(result, "return &Config{") {
+		t.Errorf("ResultLines missing context line: %q", result)
+	}
+	if !strings.Contains(result, "0.0.0.0") {
+		t.Errorf("ResultLines missing added content: %q", result)
+	}
+	if !strings.Contains(result, "Debug") {
+		t.Errorf("ResultLines missing added line 'Debug': %q", result)
+	}
+	// Should NOT contain removed content
+	if strings.Contains(result, "localhost") {
+		t.Errorf("ResultLines should not contain removed 'localhost': %q", result)
+	}
+	if strings.Contains(result, "8080") {
+		t.Errorf("ResultLines should not contain removed '8080': %q", result)
+	}
+}
+
+// TestResultLinesPureAdd tests ResultLines on an add-only hunk.
+func TestResultLinesPureAdd(t *testing.T) {
+	hunks := helperParseFakeDiff(t)
+	h := hunks[2] // pure adds
+
+	result := h.ResultLines()
+	added := h.AddedLines()
+
+	// For a pure-add hunk, ResultLines == AddedLines
+	if result != added {
+		t.Errorf("pure add: ResultLines != AddedLines\nresult: %q\nadded:  %q", result, added)
+	}
+}
+
+// TestResultLinesPureRemove tests ResultLines on a remove-only hunk.
+func TestResultLinesPureRemove(t *testing.T) {
+	hunks := helperParseFakeDiff(t)
+	h := hunks[3] // pure removes
+
+	result := h.ResultLines()
+
+	// For a pure-remove hunk, ResultLines should be empty (no context, no adds)
+	if result != "" {
+		t.Errorf("pure remove: ResultLines should be empty, got %q", result)
+	}
+}
+
+// TestAsFullPatchFormat validates AsFullPatch includes file headers.
+func TestAsFullPatchFormat(t *testing.T) {
+	hunks := helperParseFakeDiff(t)
+	h := hunks[0]
+
+	patch := h.AsFullPatch()
+
+	if !strings.HasPrefix(patch, "diff --git a/") {
+		t.Errorf("AsFullPatch missing diff header: %q", patch[:50])
+	}
+	if !strings.Contains(patch, "--- a/"+h.File) {
+		t.Errorf("AsFullPatch missing --- header")
+	}
+	if !strings.Contains(patch, "+++ b/"+h.File) {
+		t.Errorf("AsFullPatch missing +++ header")
+	}
+	if !strings.Contains(patch, h.Header) {
+		t.Errorf("AsFullPatch missing hunk header")
+	}
+}
+
 // TestAsPatchRoundTripStability ensures that AsPatch output is deterministic.
 func TestAsPatchRoundTripStability(t *testing.T) {
 	hunks := helperParseFakeDiff(t)

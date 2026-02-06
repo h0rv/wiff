@@ -64,9 +64,11 @@ S-Tab       Prev file             h   Syntax highlight
 ]c/[c       Next/prev hunk        b   Diff background
 ]f/[f       Next/prev file        f   Full file view
 +/-         Context lines         W   Watch mode
-y+label     Yank added lines      o   Open in $EDITOR
-Y+label     Yank removed lines    /   Search
-p+label     Yank patch            ?   Help
+y+label     Yank added lines      F   Follow mode
+Y+label     Yank removed lines    o   Open in $EDITOR
+p+label     Yank patch            /   Search
+c+label     Copy result (new)     ?   Help
+A+label     Stage/unstage hunk
 ```
 
 Mouse scroll, tree click, double-click to copy chunk, and right-click to copy chunk are supported.

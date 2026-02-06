@@ -57,6 +57,8 @@ type State struct {
 	FullFile     bool   // full-file view mode
 	FullFileName string // file being viewed in full-file mode
 
+	FollowMode bool // auto-scroll to new changes on watch reload
+
 	ShowHelp    bool
 	FlashMsg    string
 	FlashExpiry time.Time
@@ -1115,6 +1117,22 @@ func (s *State) PrevFullFile() {
 			return
 		}
 	}
+}
+
+// DiffStats returns the total number of added and removed lines across all hunks.
+func (s *State) DiffStats() (int, int) {
+	var added, removed int
+	for _, h := range s.Hunks {
+		for _, l := range h.Lines {
+			switch l.Op {
+			case '+':
+				added++
+			case '-':
+				removed++
+			}
+		}
+	}
+	return added, removed
 }
 
 // RefDisplay returns a display-friendly version of the ref

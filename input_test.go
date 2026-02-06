@@ -159,3 +159,81 @@ func TestResolvePendingLabelNoop(t *testing.T) {
 		t.Errorf("expected no FlashMsg, got %q", s.FlashMsg)
 	}
 }
+
+func TestCopyResultYank(t *testing.T) {
+	hunks := []Hunk{{
+		Label: indexToLabel(0),
+		File:  "test.go",
+		Lines: []Line{
+			{Op: ' ', Content: "context"},
+			{Op: '-', Content: "old"},
+			{Op: '+', Content: "new"},
+		},
+	}}
+	s := &State{Hunks: hunks, Width: 80, Height: 40}
+	label := hunks[0].Label
+
+	// Press 'c' then the label
+	HandleKey(s, makeKeyEvent('c'))
+	HandleKey(s, makeKeyEvent(rune(label[0])))
+
+	if !strings.Contains(s.FlashMsg, "result") && !strings.Contains(s.FlashMsg, "hunk "+label) {
+		// Either "Copied result from hunk X" or "Yank failed for hunk X"
+		t.Errorf("expected copy result flash for hunk %s, got %q", label, s.FlashMsg)
+	}
+}
+
+func TestStagePendingKey(t *testing.T) {
+	hunks := []Hunk{{
+		Label: indexToLabel(0),
+		File:  "test.go",
+		Lines: []Line{{Op: '+', Content: "added"}},
+	}}
+	s := &State{Hunks: hunks, Width: 80, Height: 40}
+
+	// Press 'A' — should enter pending mode
+	HandleKey(s, makeKeyEvent('A'))
+	if s.PendingKey != 'A' {
+		t.Errorf("after 'A', PendingKey = %q, want 'A'", s.PendingKey)
+	}
+}
+
+func TestFollowModeToggle(t *testing.T) {
+	s := &State{Width: 80, Height: 40}
+
+	if s.FollowMode {
+		t.Error("FollowMode should default to false")
+	}
+
+	HandleKey(s, makeKeyEvent('F'))
+	if !s.FollowMode {
+		t.Error("FollowMode should be true after pressing F")
+	}
+	if !strings.Contains(s.FlashMsg, "Follow mode enabled") {
+		t.Errorf("expected follow mode enabled flash, got %q", s.FlashMsg)
+	}
+
+	HandleKey(s, makeKeyEvent('F'))
+	if s.FollowMode {
+		t.Error("FollowMode should be false after pressing F again")
+	}
+	if !strings.Contains(s.FlashMsg, "Follow mode disabled") {
+		t.Errorf("expected follow mode disabled flash, got %q", s.FlashMsg)
+	}
+}
+
+func TestFollowModeDisabledInPipeMode(t *testing.T) {
+	s := &State{Width: 80, Height: 40, PipeMode: true}
+
+	HandleKey(s, makeKeyEvent('F'))
+	if s.FollowMode {
+		t.Error("FollowMode should not toggle in pipe mode")
+	}
+}
+
+func TestHunkStagedDefault(t *testing.T) {
+	h := Hunk{Label: "a", File: "test.go"}
+	if h.Staged {
+		t.Error("Hunk.Staged should default to false")
+	}
+}

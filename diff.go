@@ -19,6 +19,7 @@ type Hunk struct {
 	NewStart  int    // starting line number in new file
 	Lines     []Line
 	StartLine int
+	Staged    bool // true if this hunk has been staged via git apply --cached
 }
 
 // Line represents a single line in a diff hunk
@@ -47,6 +48,18 @@ func (h *Hunk) filterLines(op rune) string {
 	return strings.Join(lines, "\n")
 }
 
+// ResultLines returns the new/result version of the code section:
+// context lines plus added lines, without removed lines.
+func (h *Hunk) ResultLines() string {
+	var lines []string
+	for _, l := range h.Lines {
+		if l.Op != '-' {
+			lines = append(lines, l.Content)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
 // AsPatch formats the hunk as a unified diff patch
 func (h *Hunk) AsPatch() string {
 	var sb strings.Builder
@@ -57,6 +70,25 @@ func (h *Hunk) AsPatch() string {
 		sb.WriteString(l.Content)
 		sb.WriteByte('\n')
 	}
+	return sb.String()
+}
+
+// AsFullPatch formats the hunk as a full patch suitable for git apply,
+// including the file header lines that git apply requires.
+func (h *Hunk) AsFullPatch() string {
+	var sb strings.Builder
+	sb.WriteString("diff --git a/")
+	sb.WriteString(h.File)
+	sb.WriteString(" b/")
+	sb.WriteString(h.File)
+	sb.WriteByte('\n')
+	sb.WriteString("--- a/")
+	sb.WriteString(h.File)
+	sb.WriteByte('\n')
+	sb.WriteString("+++ b/")
+	sb.WriteString(h.File)
+	sb.WriteByte('\n')
+	sb.WriteString(h.AsPatch())
 	return sb.String()
 }
 
